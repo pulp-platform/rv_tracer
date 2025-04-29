@@ -33,7 +33,11 @@ clean:
 	rm -rf modelsim.ini
 	rm -rf work
 	rm -rf vsim.wlf
+	rm -rf addfiles.do
+	rm -rf .bender
+	rm -rf Bender.lock
 
 run:
-	git submodule update --init --recursive
-	questa-2022.3 vsim $(questa-cmd)
+	bender update
+	python3 generate_do.py
+	questa-2022.3 vsim -do addfiles.do
