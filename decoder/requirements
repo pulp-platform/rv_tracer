@@ -1,4 +1,4 @@
 tabulate
 capstone
-elftools
+pyelftools
 pyyaml
