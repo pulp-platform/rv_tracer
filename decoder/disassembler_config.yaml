@@ -1,0 +1,8 @@
+# Configuration for the disassembler tool
+# Defines which sections of the binary should be disassembled
+
+disassemble:
+  # List of sections to disassemble
+  sections:
+    - .text
+    - .text.startup
