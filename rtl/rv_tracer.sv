@@ -107,67 +107,47 @@ module rv_tracer #(
     // packet or not.
     logic                                   tc_branch_map_empty;
     logic [N-1:0]                           tc_resync;
+    logic [N-1:0]                           nc_exc_only;
+    logic [N-1:0]                           nc_ppccd_br;
     logic [$clog2(te_pkg::XLEN):0]          keep_bits[N-1:0];
-    logic [te_pkg::XLEN:0]                  addr_to_compress[N-1:0];
-    
-    /* MANAGING LC, TC, NC SIGNALS */
-    /*
-    To manage lc, tc, nc signals I decided to use two 
-    serially connected FFs.
-            ___________                    ___________              
-    sig0_d--| D     Q |--sig0_q == sig1_d--| D     Q |--sig1_q
-      nc    |         |    tc              |         |    lc
-            |   FF0   |                    |   FF1   |
-            |_________|                    |_________|
-    
-    For input signals I need another FF to sample them:
-            ___________                    ___________                    ___________
-    sig_i --| D     Q |--sig0_q == sig1_d--| D     Q |--sig1_q == sig2_d--| D     Q |--sig2_q
-    input   |         |    nc              |         |    tc              |         |    lc
-            |   FF0   |                    |   FF1   |                    |   FF2   |
-            |_________|                    |_________|                    |_________|
-    examples of this are: exception_i
-    
-    Nonetheless all inputs must be sampled and the output of the FF is considered nc.
-    */
+    logic [te_pkg::XLEN-1:0]                addr_to_compress[N-1:0];
 
-    // signals for FFs
-    logic [N-1:0][te_pkg::IRETIRE_LEN-1:0]  iretired0_d, iretired0_q;
-    logic [N-1:0][te_pkg::IRETIRE_LEN-1:0]  iretired1_d, iretired1_q;
-    logic                                   exception0_d, exception0_q;
-    logic                                   exception1_d, exception1_q;
-    logic                                   exception2_d, exception2_q;
-    logic                                   interrupt0_d, interrupt0_q;
-    logic                                   interrupt1_d, interrupt1_q;
-    logic                                   interrupt2_d, interrupt2_q;
-    logic [te_pkg::XLEN-1:0]                cause0_d, cause0_q;
-    logic [te_pkg::XLEN-1:0]                cause1_d, cause1_q;
-    logic [te_pkg::XLEN-1:0]                cause2_d, cause2_q;
-    logic [te_pkg::XLEN-1:0]                tvec0_d, tvec0_q;
-    logic [te_pkg::XLEN-1:0]                tvec1_d, tvec1_q;
-    logic [te_pkg::XLEN-1:0]                tval0_d, tval0_q;
-    logic [te_pkg::XLEN-1:0]                tval1_d, tval1_q;
-    logic [te_pkg::XLEN-1:0]                tval2_d, tval2_q;
-    logic [N-1:0][te_pkg::ITYPE_LEN-1:0]    itype0_d, itype0_q;
-    logic [N-1:0][te_pkg::ITYPE_LEN-1:0]    itype1_d, itype1_q;                        
-    logic [te_pkg::PRIV_LEN-1:0]            priv_lvl0_d, priv_lvl0_q;
-    logic [te_pkg::PRIV_LEN-1:0]            priv_lvl1_d, priv_lvl1_q;
-    logic [N-1:0][te_pkg::XLEN-1:0]         address0_d, address0_q;
-    logic [N-1:0][te_pkg::XLEN-1:0]         address1_d, address1_q;
-    logic [te_pkg::XLEN-1:0]                epc0_d, epc0_q;
-    logic [te_pkg::XLEN-1:0]                epc1_d, epc1_q;
-    logic [te_pkg::XLEN-1:0]                epc2_d, epc2_q;
-    logic [te_pkg::TIME_LEN-1:0]            time0_d, time0_q;
-    logic [te_pkg::TIME_LEN-1:0]            time1_d, time1_q;
+    logic [1:0][N-1:0][te_pkg::IRETIRE_LEN-1:0] iretired_tab;
+    logic [2:0]                                 exception_tab;
+    logic [2:0]                                 interrupt_tab;
+    logic [2:0][te_pkg::XLEN-1:0]               cause_tab;
+    logic [1:0][te_pkg::XLEN-1:0]               tvec_tab;
+    logic [2:0][te_pkg::XLEN-1:0]               tval_tab;
+    logic [1:0][N-1:0][te_pkg::ITYPE_LEN-1:0]   itype_tab;
+    logic [1:0][te_pkg::PRIV_LEN-1:0]           priv_tab;
+    logic [1:0][N-1:0][te_pkg::XLEN-1:0]        address_tab;
+    logic [2:0][te_pkg::XLEN-1:0]               epc_tab;
+    logic [1:0][te_pkg::TIME_LEN-1:0]           time_tab;
+    logic [2:0][N-1:0]                          updiscon_tab;
+    logic [2:0][N-1:0]                          qualified_tab;
+   
+    logic [N-1:0][te_pkg::IRETIRE_LEN-1:0]  tc_iretired, nc_iretired;
+    logic                                   lc_exception, tc_exception, nc_exception;
+    logic                                   lc_interrupt, tc_interrupt, nc_interrupt;
+    logic [te_pkg::XLEN-1:0]                lc_cause, tc_cause, nc_cause;
+    logic [te_pkg::XLEN-1:0]                tc_tvec, nc_tvec;
+    logic [te_pkg::XLEN-1:0]                lc_tval, tc_tval, nc_tval;
+    logic [N-1:0][te_pkg::ITYPE_LEN-1:0]    tc_itype, nc_itype;
+    logic [te_pkg::PRIV_LEN-1:0]            tc_priv, nc_priv;
+    logic [N-1:0][te_pkg::XLEN-1:0]         tc_address, nc_address;
+    logic [te_pkg::XLEN-1:0]                lc_epc, tc_epc, nc_epc;                 
+    logic [te_pkg::TIME_LEN-1:0]            tc_time, nc_time;
+    logic [N-1:0]                           lc_updiscon, tc_updiscon, nc_updiscon;
+    logic [N-1:0]                           lc_qualified, tc_qualified, nc_qualified;
+
+   
     logic                                   tc_first_qualified;
     logic                                   tc_final_qualified;
-    logic [N-1:0]                           updiscon0_d, updiscon0_q;
-    logic [N-1:0]                           updiscon1_d, updiscon1_q;
-    logic [N-1:0]                           updiscon2_d, updiscon2_q;
-    logic [N-1:0]                           qualified0_d, qualified0_q;
-    logic [N-1:0]                           qualified1_d, qualified1_q;
-    logic [N-1:0]                           qualified2_d, qualified2_q;
-    logic [N-1:0]                           nc_qualified;
+    logic [N-1:0]                           updiscon;
+    logic [N-1:0][te_pkg::XLEN-1:0]         address;
+    logic [N-1:0]                           qualified;
+    
+    
     logic [N-1:0]                           valid0_d, valid0_q;
     logic                                   privchange_d, privchange_q;
     // logic                                   context_change_d, context_change_q; // non mandatory
@@ -276,47 +256,86 @@ module rv_tracer #(
     assign branch_taken_d = |branch_taken;
 
     // first and final qualified
-    assign tc_first_qualified = trace_activated && |qualified1_q && !qualified2_q && trace_enable;
-    assign tc_final_qualified = trace_activated && |qualified2_q && !qualified1_q && trace_enable;
+    assign tc_first_qualified = trace_activated && |tc_qualified && !lc_qualified && trace_enable;
+    assign tc_final_qualified = trace_activated && |lc_qualified && !tc_qualified && trace_enable;
 
+    always_ff @( posedge clk_i, negedge rst_ni ) begin 
+        if(~rst_ni) begin
+            iretired_tab  <= '0;
+            exception_tab <= '0;
+            interrupt_tab <= '0;
+            cause_tab <= '0;
+            tvec_tab <= '0;
+            tval_tab <= '0;
+            itype_tab <= '0;
+            priv_tab <= '0;
+            address_tab <= '0;
+            epc_tab <= '0;
+            time_tab <= '0;
+            updiscon_tab <= '0;
+            qualified_tab <= '0;
+        end else begin
+            if (|valid_i) begin 
+                iretired_tab <= {iretired_tab[0], iretire_i};
+                exception_tab <= {exception_tab[1:0], itype_i[0] == 1};
+                interrupt_tab <= {interrupt_tab[1:0], itype_i[0] == 2};
+                cause_tab <= {cause_tab[1:0],cause_i};
+                tvec_tab <= {tvec_tab[0], tvec_i};
+                tval_tab <= {tval_tab [1:0], tval_i};
+                itype_tab <= {itype_tab[0], itype_i};
+                priv_tab <= {priv_tab[0], priv_i};
+                address_tab <= {address_tab[0], address};
+                epc_tab <= {epc_tab[1:0], epc_i};
+                time_tab <= {time_tab[0], time_i};
+                updiscon_tab <= {updiscon_tab[1:0], updiscon};
+                qualified_tab <={qualified_tab[1:0], qualified};
+            end
+        end 
+
+    end 
+    //lc asignements
+    assign lc_exception = exception_tab[2];
+    assign lc_interrupt = interrupt_tab[2];
+    assign lc_cause = cause_tab[2];
+    assign lc_tval = tval_tab[2];
+    assign lc_epc = epc_tab[2];
+    assign lc_updiscon = updiscon_tab[2];
+    assign lc_qualified = qualified_tab[2];    
+    // tc assignements
+    assign tc_iretired = iretired_tab[1];
+    assign tc_exception = exception_tab[1];
+    assign tc_interrupt = interrupt_tab[1];
+    assign tc_cause= cause_tab[1];
+    assign tc_tvec = tvec_tab[1];
+    assign tc_tval = tval_tab[1];
+    assign tc_itype = itype_tab[1];
+    assign tc_priv = priv_tab[1];
+    assign tc_address = address_tab[1];
+    assign tc_epc = epc_tab[1];
+    assign tc_time = time_tab[1];
+    assign tc_updiscon = updiscon_tab[1];
+    assign tc_qualified = qualified_tab[1];
+    // nc assignements
+    assign nc_iretired = iretired_tab[0];
+    assign nc_exception = exception_tab[0];
+    assign nc_interrupt = interrupt_tab[0];
+    assign nc_cause= cause_tab[0];
+    assign nc_tcvec = tvec_tab[0];
+    assign nc_tval = tval_tab[0];
+    assign nc_itype = itype_tab[0];
+    assign nc_priv = priv_tab[0];
+    assign nc_address = address_tab[0];
+    assign nc_epc = epc_tab[0];
+    assign nc_time = time_tab[0];
+    assign nc_updiscon = updiscon_tab[0];
+    assign nc_qualified = qualified_tab[0]; 
+
+    //FIXME need cleaning
     // not static assignments
     always_comb begin
         // init
         branch_valid = '0;
         branch_taken = '0;
-        exception0_d = exception0_q;
-        exception1_d = exception1_q;
-        exception2_d = exception2_q;
-        interrupt0_d = interrupt0_q;
-        interrupt1_d = interrupt1_q;
-        interrupt2_d = interrupt2_q;
-        updiscon0_d = updiscon0_q;
-        updiscon1_d = updiscon1_q;
-        updiscon2_d = updiscon2_q;
-        cause0_d = cause0_q;
-        cause1_d = cause1_q;
-        cause2_d = cause2_q;
-        tval0_d = tval0_q;
-        tval1_d = tval1_q;
-        tval2_d = tval2_q;
-        itype0_d = itype0_q;
-        itype1_d = itype1_q;
-        priv_lvl0_d = priv_lvl0_q;
-        priv_lvl1_d = priv_lvl1_q;
-        qualified0_d = qualified0_q;
-        qualified1_d = qualified1_q;
-        qualified2_d = qualified2_q;
-        iretired0_d = iretired0_q;
-        iretired1_d = iretired1_q;
-        tvec0_d = tvec0_q;
-        tvec1_d = tvec1_q;
-        address0_d = address0_q;
-        address1_d = address1_q;
-        epc0_d = epc0_q;
-        epc1_d = epc1_q;
-        epc2_d = epc2_q;
-        time0_d = time0_q;
-        time1_d = time1_q;
         privchange_d = privchange_q;
         // context_change_d = context_change_q;
         // precise_context_report_d = precise_context_report_q; // requires ctype signal CPU side
@@ -329,71 +348,40 @@ module rv_tracer #(
         // it works for all three cases
         for (int i = 0; i < N; i++) begin
             if (valid_i[i]) begin
-                itype0_d[i] = itype_i[i];
-                iretired0_d[i] = iretire_i[i];
-                address0_d[i] = iaddr_i[i]+2*(iretire_i[i] - 2**ilastsize_i[i]);
+                address[i] = iaddr_i[i];
+                //FIXME we remove block reconstruction address
+                //address[i] = iaddr_i[i]+2*(iretire_i[i] - 2**ilastsize_i[i]);
             end
         end
 
         // assigning branch map inputs
         for (int i = 0; i < N; i++) begin
-            if (itype0_q[i] == 4 || itype0_q[i] == 5) begin
+            if (nc_itype[i] == 4 || nc_itype[i] == 5) begin 
                 branch_valid[i] = '1;
             end
-            if (itype0_q[i] == 5) begin
+            if (nc_itype[i] == 5) begin
                 branch_taken[i] = '1;
             end
         end
 
         // updiscon
         if (N == 1 || (N > 1 && ONLY_BRANCHES)) begin
-            if (nc_qualified[0]) begin
-                updiscon0_d[0] = itype_i[0] == 10;
+            if (qualified[0]) begin
+                updiscon[0] = itype_i[0] == 6;
             end
         end
         // wait for this case
         if (N > 1 && !ONLY_BRANCHES) begin
             for (int i = 0; i < N; i++) begin
-                if (nc_qualified[i]) begin
-                    updiscon0_d[i] = itype_i[i] == 10;
+                if (qualified[i]) begin
+                    updiscon[i] = itype_i[i] == 6;
                 end
             end
         end
 
         // updating registers values
         if (|valid_i) begin
-            exception0_d = itype_i[0] == 1;
-            exception1_d = exception0_q;
-            exception2_d = exception1_q;
-            interrupt0_d = itype_i[0] == 2;
-            interrupt1_d = interrupt0_q;
-            interrupt2_d = interrupt1_q;
-            updiscon1_d = updiscon0_q;
-            updiscon2_d = updiscon1_q;
-            cause0_d = cause_i;
-            cause1_d = cause0_q;
-            cause2_d = cause1_q;
-            tval0_d = tval_i;
-            tval1_d = tval0_q;
-            tval2_d = tval1_q;
-            itype0_d = itype_i;
-            itype1_d = itype0_q;
-            priv_lvl0_d = priv_i;
-            priv_lvl1_d = priv_lvl0_q;
-            qualified0_d = nc_qualified;
-            qualified1_d = qualified0_q;
-            qualified2_d = qualified1_q;
-            iretired0_d = iretire_i;
-            iretired1_d = iretired0_q;
-            tvec0_d = tvec_i;
-            tvec1_d = tvec0_q;
-            address1_d = address0_q;
-            epc0_d = epc_i;
-            epc1_d = epc0_q;
-            epc2_d = epc1_q;
-            time0_d = time_i;
-            time1_d = time0_q;
-            privchange_d = (priv_lvl0_q != priv_lvl1_q) && |valid_i;
+            privchange_d = (nc_priv != tc_priv) && |valid_i;
             // context_change_d; // TODO
             //precise_context_report_d; // requires ctype signal CPU side
             //context_report_as_disc_d; //ibidem
@@ -403,7 +391,7 @@ module rv_tracer #(
         end
 
         if (!turn_on_tracer_q) begin
-            turn_on_tracer_d = |valid_i && qualified0_d;
+            turn_on_tracer_d = |valid_i && nc_qualified;
         end
     end
 
@@ -468,7 +456,7 @@ module rv_tracer #(
     ) i_te_branch_map(
         .clk_i         (clk_gated),
         .rst_ni        (rst_ni),
-        .valid_i       (branch_valid & qualified0_q & valid0_q),
+        .valid_i       (branch_valid & nc_qualified & valid0_q),
         .branch_taken_i(branch_taken),
         .flush_i       (nc_branch_map_flush),
         //.branch_taken_prediction_i(), // non mandatory
@@ -482,6 +470,7 @@ module rv_tracer #(
 
     /* RESYNC COUNTER */
     te_resync_counter #(
+        .N(N), 
         .MODE(te_pkg::CYCLE_MODE), // count cycles
         .MAX_VALUE(13'h1FFF)         // 8192
     ) i_te_resync_counter( // for testing we keep the def settings
@@ -498,7 +487,7 @@ module rv_tracer #(
 
     /* FILTER */
     generate
-        if (N > 1 && ONLY_BRANCHES) begin
+        if (ONLY_BRANCHES) begin
             for (genvar i = 0; i < N; i++) begin
                 te_filter i_te_filter(
                     .trace_enable_i   (trace_enable || trace_activated), // tracks 1st branch if 1st inst
@@ -532,7 +521,7 @@ module rv_tracer #(
                     .match_iaddr_i    (match_iaddr),
                     .iaddr_mode_i     (iaddr_mode),
                     .iaddr_i          (iaddr_i[i]),
-                    .nc_qualified_o   (nc_qualified[i])
+                    .nc_qualified_o   (qualified[i])
                 );
             end
         end
@@ -548,11 +537,11 @@ module rv_tracer #(
                 .clk_i                    (clk_gated),
                 .rst_ni                   (rst_ni),
                 .valid_i                  (valid0_q[0] || (enc_activated_q || enc_deactivated_q)), // necessary to generate F3SF3 packet
-                .lc_exception_i           (exception2_q || interrupt2_q),
-                .lc_updiscon_i            (updiscon2_q[0]),
-                .tc_qualified_i           (qualified1_q[0]),
-                .tc_exception_i           (exception1_q || interrupt1_q),
-                .tc_retired_i             (iretired1_q[0]),
+                .lc_exception_i           (lc_exception || lc_interrupt),
+                .lc_updiscon_i            (lc_updiscon),
+                .tc_qualified_i           (tc_qualified[0]),
+                .tc_exception_i           (tc_exception|| tc_interrupt),
+                .tc_retired_i             (tc_iretired[0]),
                 .tc_first_qualified_i     (tc_first_qualified),
                 .tc_privchange_i          (privchange_q),
                 //.tc_context_change_i(), // non mandatory
@@ -562,7 +551,7 @@ module rv_tracer #(
                 .tc_gt_max_resync_i       (gt_max_resync_q),
                 .tc_et_max_resync_i       (et_max_resync_q),
                 .tc_branch_map_empty_i    (tc_branch_map_empty),
-                .tc_branch_map_full_i     (branch_map_full_q),
+                .tc_branch_map_full_i     (branch_map_full_d),
                 //.tc_branch_misprediction_i(), // non mandatory
                 //.tc_pbc_i(), // non mandatory
                 .tc_enc_enabled_i         (enc_activated_q),
@@ -570,14 +559,14 @@ module rv_tracer #(
                 .tc_opmode_change_i       (enc_config_change_q),
                 .tc_final_qualified_i     (tc_final_qualified),
                 .tc_packets_lost_i        (~encapsulator_ready_i), // non mandatory
-                .nc_exception_i           (exception0_q || interrupt0_q),
-                .nc_privchange_i          (privchange_d),
+                .nc_exception_i           (nc_exception || nc_interrupt),
+                .nc_privchange_i          (privchange_d), 
                 //.nc_context_change_i(),
                 //.nc_precise_context_report_i(), // requires ctype signal CPU side
                 //.nc_context_report_as_disc_i(), // ibidem
                 .nc_branch_map_empty_i    (nc_branch_map_empty),
-                .nc_qualified_i           (qualified0_q[0]),
-                .nc_retired_i             (iretired0_q[0]),
+                .nc_qualified_i           (nc_qualified[0]),
+                .nc_retired_i             (nc_iretired[0]),
                 //.halted_i(), // non mandatory side band signal
                 //.reset_i(), // ibidem
                 //.implicit_return_i(), // non mandatory
@@ -593,6 +582,8 @@ module rv_tracer #(
                 .resync_timer_rst_o       (resync_rst),
                 .qual_status_o            (qual_status[0]),
                 .tc_resync_o              (tc_resync[0]),
+                .nc_exc_only_o            (nc_exc_only[0]),
+                .nc_ppccd_br_o            (nc_ppccd_br[0]),
                 .keep_bits_o              (keep_bits[0])
             );
 
@@ -604,25 +595,27 @@ module rv_tracer #(
                 .packet_format_i          (packet_format[0]),
                 .packet_f_sync_subformat_i(packet_f_sync_subformat[0]),
                 //.packet_f_opt_ext_subformat_i(packet_f_opt_ext_subformat), // non mandatory
-                .lc_cause_i               (cause2_q),
-                .lc_tval_i                (tval2_q),
-                .lc_interrupt_i           (interrupt2_q),
-                .tc_cause_i               (cause1_q),
-                .tc_tval_i                (tval1_q),
-                .tc_interrupt_i           (interrupt1_q),
+                .lc_cause_i               (lc_cause),
+                .lc_tval_i                (lc_tval),
+                .lc_interrupt_i           (lc_interrupt),
+                .tc_cause_i               (tc_cause),
+                .tc_tval_i                (tc_tval),
+                .tc_interrupt_i           (tc_interrupt),
                 .tc_resync_i              (tc_resync[0]),
+                .nc_exc_only_i            (nc_exc_only[0]),
+                .nc_ppccd_br_i            (nc_ppccd_br[0]),
                 .nocontext_i              (nocontext),
                 .notime_i                 (notime),
                 .tc_branch_i              (branch_q),
                 .tc_branch_taken_i        (branch_taken_q),
-                .tc_priv_i                (priv_lvl1_q),
-                .tc_time_i                (time1_q), // non mandatory
+                .tc_priv_i                (tc_priv),
+                .tc_time_i                (tc_time), // non mandatory
                 //.context_i(), // non mandatory
-                .tc_address_i             (address1_q[0]),
+                .tc_address_i             (tc_address[0]),
                 .lc_tc_mux_i              (lc_tc_mux[0]),
                 .thaddr_i                 (thaddr[0]),
-                .tc_tvec_i                (tvec1_q),
-                .lc_epc_i                 (epc2_q),
+                .tc_tvec_i                (tc_tvec),
+                .lc_epc_i                 (lc_epc),
                 .tc_ienable_i             (trace_enable),
                 .encoder_mode_i           (encoder_mode),
                 .qual_status_i            (qual_status[0]),
@@ -630,7 +623,7 @@ module rv_tracer #(
                 //.denable_i(), // stand-by
                 //.dloss_i(), //stand-by
                 //.notify_i(), // non mandatory
-                .lc_updiscon_i            (updiscon2_q[0]),
+                .lc_updiscon_i            (lc_updiscon[0]),
                 //.irreport_i(), // non mandatory
                 //.irdepth_i(), // non mandatory
                 .branches_i               (branch_count),
@@ -654,11 +647,11 @@ module rv_tracer #(
                         .clk_i                    (clk_gated),
                         .rst_ni                   (rst_ni),
                         .valid_i                  (|valid0_q || (enc_activated_q || enc_deactivated_q)),
-                        .lc_exception_i           (exception2_q || interrupt2_q),
-                        .lc_updiscon_i            (updiscon2_q[i]),
-                        .tc_qualified_i           (qualified1_q[i]),
-                        .tc_exception_i           (exception1_q || interrupt1_q),
-                        .tc_retired_i             (iretired1_q[i]),
+                        .lc_exception_i           (lc_exception || lc_interrupt),
+                        .lc_updiscon_i            (lc_updiscon[i]),
+                        .tc_qualified_i           (tc_qualified[i]),
+                        .tc_exception_i           (tc_exception|| tc_interrupt),
+                        .tc_retired_i             (tc_iretired[i]),
                         .tc_first_qualified_i     (tc_first_qualified),
                         .tc_privchange_i          (privchange_q),
                         //.tc_context_change_i(), // non mandatory
@@ -676,14 +669,14 @@ module rv_tracer #(
                         .tc_opmode_change_i       (enc_config_change_q),
                         .tc_final_qualified_i     (tc_final_qualified),
                         .tc_packets_lost_i        (~encapsulator_ready_i), // non mandatory
-                        .nc_exception_i           (exception0_q || interrupt0_q),
+                        .nc_exception_i           (nc_exception || nc_interrupt),
                         .nc_privchange_i          (privchange_d),
                         //.nc_context_change_i(),
                         //.nc_precise_context_report_i(), // requires ctype signal CPU side
                         //.nc_context_report_as_disc_i(), // ibidem
                         .nc_branch_map_empty_i    (nc_branch_map_empty),
-                        .nc_qualified_i           (qualified0_q[i]),
-                        .nc_retired_i             (iretired0_q[i]),
+                        .nc_qualified_i           (nc_qualified[i]),
+                        .nc_retired_i             (nc_iretired[i]),
                         //.halted_i(), // non mandatory side band signal
                         //.reset_i(), // ibidem
                         //.implicit_return_i(), // non mandatory
@@ -710,25 +703,25 @@ module rv_tracer #(
                         .packet_format_i          (packet_format[i]),
                         .packet_f_sync_subformat_i(packet_f_sync_subformat[i]),
                         //.packet_f_opt_ext_subformat_i(packet_f_opt_ext_subformat), // non mandatory
-                        .lc_cause_i               (cause2_q),
-                        .lc_tval_i                (tval2_q),
-                        .lc_interrupt_i           (interrupt2_q),
-                        .tc_cause_i               (cause1_q),
-                        .tc_tval_i                (tval1_q),
-                        .tc_interrupt_i           (interrupt1_q),
+                        .lc_cause_i               (lc_cause),
+                        .lc_tval_i                (lc_tval),
+                        .lc_interrupt_i           (lc_interrupt),
+                        .tc_cause_i               (tc_cause),
+                        .tc_tval_i                (tc_tval),
+                        .tc_interrupt_i           (tc_interrupt),
                         .tc_resync_i              (tc_resync[i]),
                         .nocontext_i              (nocontext),
                         .notime_i                 (notime),
                         .tc_branch_i              (branch_q),
                         .tc_branch_taken_i        (branch_taken_q),
-                        .tc_priv_i                (priv_lvl1_q),
-                        .tc_time_i                (time1_q), // non mandatory
+                        .tc_priv_i                (tc_priv),
+                        .tc_time_i                (tc_time), // non mandatory
                         //.context_i(), // non mandatory
-                        .tc_address_i             (address1_q[i]),
+                        .tc_address_i             (tc_address[i]),
                         .lc_tc_mux_i              (lc_tc_mux[i]),
                         .thaddr_i                 (thaddr[i]),
-                        .tc_tvec_i                (tvec1_q),
-                        .lc_epc_i                 (epc2_q),
+                        .tc_tvec_i                (tc_tvec),
+                        .lc_epc_i                 (lc_epc),
                         .tc_ienable_i             (trace_enable),
                         .encoder_mode_i           (encoder_mode),
                         .qual_status_i            (qual_status[i]),
@@ -736,7 +729,7 @@ module rv_tracer #(
                         //.denable_i(), // stand-by
                         //.dloss_i(), //stand-by
                         //.notify_i(), // non mandatory
-                        .lc_updiscon_i            (updiscon2_q[i]),
+                        .lc_updiscon_i            (lc_updiscon[i]),
                         //.irreport_i(), // non mandatory
                         //.irdepth_i(), // non mandatory
                         .branches_i               (branch_count),
@@ -756,11 +749,11 @@ module rv_tracer #(
                         .clk_i                    (clk_gated),
                         .rst_ni                   (rst_ni),
                         .valid_i                  (|valid0_q || (enc_activated_q || enc_deactivated_q)),
-                        .lc_exception_i           (exception2_q || interrupt2_q),
-                        .lc_updiscon_i            (updiscon2_q[i]),
-                        .tc_qualified_i           (qualified1_q[i]),
-                        .tc_exception_i           (exception1_q || interrupt1_q),
-                        .tc_retired_i             (iretired1_q[i]),
+                        .lc_exception_i           (lc_exception || lc_interrupt),
+                        .lc_updiscon_i            (lc_updiscon[i]),
+                        .tc_qualified_i           (tc_qualified[i]),
+                        .tc_exception_i           (tc_exception || tc_interrupt),
+                        .tc_retired_i             (tc_iretired[i]),
                         .tc_first_qualified_i     (tc_first_qualified),
                         .tc_privchange_i          (privchange_q),
                         //.tc_context_change_i(), // non mandatory
@@ -778,14 +771,14 @@ module rv_tracer #(
                         .tc_opmode_change_i       (enc_config_change_q),
                         .tc_final_qualified_i     (tc_final_qualified),
                         .tc_packets_lost_i        (~encapsulator_ready_i), // non mandatory
-                        .nc_exception_i           (exception0_q || interrupt0_q),
+                        .nc_exception_i           (nc_exception || nc_interrupt),
                         .nc_privchange_i          (privchange_d),
                         //.nc_context_change_i(),
                         //.nc_precise_context_report_i(), // requires ctype signal CPU side
                         //.nc_context_report_as_disc_i(), // ibidem
                         .nc_branch_map_empty_i    (nc_branch_map_empty),
-                        .nc_qualified_i           (qualified0_q[i]),
-                        .nc_retired_i             (iretired0_q[i]),
+                        .nc_qualified_i           (nc_qualified[i]),
+                        .nc_retired_i             (nc_iretired[i]),
                         //.halted_i(), // non mandatory side band signal
                         //.reset_i(), // ibidem
                         //.implicit_return_i(), // non mandatory
@@ -812,25 +805,25 @@ module rv_tracer #(
                         .packet_format_i          (packet_format[i]),
                         .packet_f_sync_subformat_i(packet_f_sync_subformat[i]),
                         //.packet_f_opt_ext_subformat_i(packet_f_opt_ext_subformat), // non mandatory
-                        .lc_cause_i               (cause2_q),
-                        .lc_tval_i                (tval2_q),
-                        .lc_interrupt_i           (interrupt2_q),
-                        .tc_cause_i               (cause1_q),
-                        .tc_tval_i                (tval1_q),
-                        .tc_interrupt_i           (interrupt1_q),
+                        .lc_cause_i               (lc_cause),
+                        .lc_tval_i                (lc_tval),
+                        .lc_interrupt_i           (lc_interrupt),
+                        .tc_cause_i               (tc_cause),
+                        .tc_tval_i                (tc_tval),
+                        .tc_interrupt_i           (tc_interrupt),
                         .tc_resync_i              (tc_resync[i]),
                         .nocontext_i              (nocontext),
                         .notime_i                 (notime),
                         .tc_branch_i              (branch_q),
                         .tc_branch_taken_i        (branch_taken_q),
-                        .tc_priv_i                (priv_lvl1_q),
-                        .tc_time_i                (time1_q), // non mandatory
+                        .tc_priv_i                (tc_priv),
+                        .tc_time_i                (tc_time), // non mandatory
                         //.context_i(), // non mandatory
-                        .tc_address_i             (address1_q[i]),
+                        .tc_address_i             (tc_address[i]),
                         .lc_tc_mux_i              (lc_tc_mux[i]),
                         .thaddr_i                 (thaddr[i]),
-                        .tc_tvec_i                (tvec1_q),
-                        .lc_epc_i                 (epc2_q),
+                        .tc_tvec_i                (tc_tvec),
+                        .lc_epc_i                 (lc_epc),
                         .tc_ienable_i             (trace_enable),
                         .encoder_mode_i           (encoder_mode),
                         .qual_status_i            (qual_status[i]),
@@ -838,7 +831,7 @@ module rv_tracer #(
                         //.denable_i(), // stand-by
                         //.dloss_i(), //stand-by
                         //.notify_i(), // non mandatory
-                        .lc_updiscon_i            (updiscon2_q[i]),
+                        .lc_updiscon_i            (lc_updiscon[i]),
                         //.irreport_i(), // non mandatory
                         //.irdepth_i(), // non mandatory
                         .branches_i               (branch_count),
@@ -861,39 +854,6 @@ module rv_tracer #(
     always_ff @( posedge clk_i, negedge rst_ni ) begin : registers
         if(~rst_ni) begin
             valid0_q <= '0;
-            exception0_q <= '0;
-            exception1_q <= '0;
-            exception2_q <= '0;
-            interrupt0_q <= '0;
-            interrupt1_q <= '0;
-            interrupt2_q <= '0;
-            updiscon0_q <= '0;
-            updiscon1_q <= '0;
-            updiscon2_q <= '0;
-            cause0_q <= '0;
-            cause1_q <= '0;
-            cause2_q <= '0;
-            tval0_q <= '0;
-            tval1_q <= '0;
-            tval2_q <= '0;
-            itype0_q <= '0;
-            itype1_q <= '0;
-            priv_lvl0_q <= '0;
-            priv_lvl1_q <= '0;
-            qualified0_q <= '0;
-            qualified1_q <= '0;
-            qualified2_q <= '0;
-            iretired0_q <= '0;
-            iretired1_q <= '0;
-            tvec0_q <= '0;
-            tvec1_q <= '0;
-            address0_q <= '0;
-            address1_q <= '0;
-            epc0_q <= '0;
-            epc1_q <= '0;
-            epc2_q <= '0;
-            time0_q <= '0;
-            time1_q <= '0;
             privchange_q <= '0;
             // context_change_q <= '0;
             //precise_context_report_q <= '0; // requires ctype signal CPU side
@@ -914,39 +874,6 @@ module rv_tracer #(
             branch_q <= '0;
             turn_on_tracer_q <= '0;
         end else begin
-            exception0_q <= exception0_d;
-            exception1_q <= exception1_d;
-            exception2_q <= exception2_d;
-            interrupt0_q <= interrupt0_d;
-            interrupt1_q <= interrupt1_d;
-            interrupt2_q <= interrupt2_d;
-            updiscon0_q <= updiscon0_d;
-            updiscon1_q <= updiscon1_d;
-            updiscon2_q <= updiscon2_d;
-            cause0_q <= cause0_d;
-            cause1_q <= cause1_d;
-            cause2_q <= cause2_d;
-            tval0_q <= tval0_d;
-            tval1_q <= tval1_d;
-            tval2_q <= tval2_d;
-            itype0_q <= itype0_d;
-            itype1_q <= itype1_d;
-            priv_lvl0_q <= priv_lvl0_d;
-            priv_lvl1_q <= priv_lvl1_d;
-            qualified0_q <= qualified0_d;
-            qualified1_q <= qualified1_d;
-            qualified2_q <= qualified2_d;
-            iretired0_q <= iretired0_d;
-            iretired1_q <= iretired1_d;
-            tvec0_q <= tvec0_d;
-            tvec1_q <= tvec1_d;
-            address0_q <= address0_d;
-            address1_q <= address1_d;
-            epc0_q <= epc0_d;
-            epc1_q <= epc1_d;
-            epc2_q <= epc2_d;
-            time0_q <= time0_d;
-            time1_q <= time1_d;
             privchange_q <= privchange_d;
             // context_change_q <= context_change_d;
             //precise_context_report_q <= precise_context_report_d; // requires ctype signal CPU side

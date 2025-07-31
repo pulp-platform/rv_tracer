@@ -19,7 +19,7 @@ it stores values for the encoder in memory mapped registers
 */
 
 // uncomment to enable 64bits arch support
-`define TE_ARCH64
+//`define TE_ARCH64
 
 module te_reg #(
     parameter APB_ADDR_WIDTH = 32 // it is the max allowed, maybe change to a smaller value
@@ -711,7 +711,7 @@ module te_reg #(
 
     always_ff @(posedge clk_i, negedge rst_ni) begin
         if(~rst_ni) begin
-            trace_enable_q <= '0;
+            trace_enable_q <= '1;
             // storing config parameters
             cause_filter_q <= '0;
             upper_cause_q <= '0;
@@ -738,8 +738,8 @@ module te_reg #(
             lower_iaddr_q <= '0;
             match_iaddr_q <= '0;
             iaddr_mode_q <= '0;
-            configuration_q.delta_address_en <= '1; // delta address only one mandatory
-            configuration_q.full_address_en <= '0;
+            configuration_q.delta_address_en <= '0; // delta address only one mandatory //FIXME changing this for debug
+            configuration_q.full_address_en <= '1;
             configuration_q.implicit_exception_en <= '0;
             configuration_q.sijump_en <= '0;
             configuration_q.implicit_return_en <= '0;
@@ -748,7 +748,7 @@ module te_reg #(
             lossless_trace_q <= '0;
             shallow_trace_q <= '0;
             nocontext_q <= '1;
-            notime_q <= '1;
+            notime_q <= '0;
             trace_activated_q <= '1;
             setup_q <= '0;
         end else begin

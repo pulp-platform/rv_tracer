@@ -28,7 +28,7 @@ ignored.
 */
 
 module te_resync_counter #(
-    parameter N = 2,
+    parameter N = 1,
     parameter MODE = te_pkg::CYCLE_MODE, // counts cycles as default
     parameter MAX_VALUE = 16'hFFFF // default max value, can be personalized
     )
