@@ -14,7 +14,7 @@
 // Github:  @ubolakes
 
 // uncomment to enable 64bits arch support
-`define TE_ARCH64
+// `define TE_ARCH64
 
 package te_pkg;
     localparam PRIV_LEN = 2; // depends on CPU implementation
@@ -93,7 +93,7 @@ package te_pkg;
     // localparam for time signal
     localparam TIME_LEN = 64;
     // localparam for itype
-    localparam ITYPE_LEN = 4;
+    localparam ITYPE_LEN = 3;
     // localparam for iretire
     localparam IRETIRE_LEN = 32;
 

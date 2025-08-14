@@ -40,6 +40,9 @@ module te_packet_emitter
     input logic                                 tc_interrupt_i,
     input logic                                 tc_resync_i,
 
+    input logic                                 nc_exc_only_i,
+    input logic                                 nc_ppccd_br_i,
+
     // nc (next cycle) signals
 
     /*  the following signals used to determine 
@@ -118,14 +121,15 @@ module te_packet_emitter
     output logic [te_pkg::P_LEN-1:0]            payload_length_o, // in bytes
     output logic                                branch_map_flush_o, // flushing done after each request
     // to send back to priority module in order to compress them
-    output logic [te_pkg::XLEN:0]               addr_to_compress_o
+    output logic [te_pkg::XLEN-1:0]             addr_to_compress_o
 );
     
     // internal signals
     logic                                       branch;
+    logic                                       interrupt;
     logic [te_pkg::XLEN-1:0]                    address;
     logic [te_pkg::XLEN-1:0]                    ecause;
-    logic signed [te_pkg::XLEN:0]               diff_addr;
+    logic [te_pkg::XLEN-1:0]                    diff_addr;
     logic [te_pkg::XLEN-1:0]                    latest_addr_d, latest_addr_q; // address of the latest packet emitted
     logic [te_pkg::XLEN-1:0]                    tval;
     logic [1:0]                                 time_and_context; // if payload requires time/context
@@ -187,7 +191,6 @@ module te_packet_emitter
 
     // combinatorial network to compute the offset to compress the branch_map
     always_comb begin : branch_map_offset
-        branch_map_off = '0;
         if(branches_i == 1) begin
             branch_map_off = 1;
         end else if(branches_i <= 3) begin
@@ -196,9 +199,12 @@ module te_packet_emitter
             branch_map_off = 7;
         end else if(branches_i <= 15) begin
             branch_map_off = 15;
-        end else begin
+        end else if (branches_i < 31) begin
             branch_map_off = 31;
+        end else begin 
+            branch_map_off = '0; 
         end
+    
     end
 
     /*  
@@ -263,7 +269,7 @@ module te_packet_emitter
 
                     case(time_and_context)
                     2'b00: begin
-                        used_bits += 1 + (address_off * 8)+1 + te_pkg::PRIV_LEN;
+                        used_bits += 1 + (address_off * 8) + te_pkg::PRIV_LEN;
 
                         packet_payload_o[4+:1+te_pkg::PRIV_LEN] = {
                             tc_priv_i,
@@ -272,50 +278,52 @@ module te_packet_emitter
                         // address compression
                         case (address_off)
                         1: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+:9] = {
-                                addr_to_compress_o[8:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+:8] = {
+                                addr_to_compress_o[7:0]
                             };
                         end 
                         2: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+:17] = {
-                                addr_to_compress_o[16:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+:16] = {
+                                addr_to_compress_o[15:0]
                             };
                         end
                         3: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+:25] = {
-                                addr_to_compress_o[24:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+:24] = {
+                                addr_to_compress_o[23:0]
                             };
                         end
                         4: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+:33] = {
-                                addr_to_compress_o[32:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+:32] = {
+                                addr_to_compress_o[31:0]
                             };
                         end
+                        `ifdef TE_ARCH64 // 64bits case
                         5: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+:41] = {
-                                addr_to_compress_o[40:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+:40] = {
+                                addr_to_compress_o[39:0]
                             };
                         end 
                         6: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+:49] = {
-                                addr_to_compress_o[48:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+:48] = {
+                                addr_to_compress_o[47:0]
                             };
                         end
                         7: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+:57] = {
-                                addr_to_compress_o[56:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+:56] = {
+                                addr_to_compress_o[55:0]
                             };
                         end
                         8: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+:65] = {
+                            packet_payload_o[5+te_pkg::PRIV_LEN+:64] = {
                                 addr_to_compress_o
                             };
                         end
+                        `endif
                         endcase
                     end
 
                     2'b10: begin
-                        used_bits += 1 + te_pkg::PRIV_LEN + te_pkg::TIME_LEN + (address_off * 8)+1;
+                        used_bits += 1 + te_pkg::PRIV_LEN + te_pkg::TIME_LEN + (address_off * 8);
 
                         packet_payload_o[4+:1+te_pkg::PRIV_LEN+te_pkg::TIME_LEN] = {
                             tc_time_i,
@@ -323,47 +331,57 @@ module te_packet_emitter
                             branch
                         };
                         // address compression
+                        // FIXME: simplify case with:
+                        // for (int unsigned i = 1; i <= 8; i++) begin
+                        //     if (i == address_off) begin
+                        //         packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::TIME_LEN+:i*8] = {
+                        //             addr_to_compress_o[i*8-1:0]
+                        //         };
+                        //     end
+                        // end
                         case (address_off)
                         1: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::XLEN+:9] = {
-                                addr_to_compress_o[8:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::TIME_LEN+:8] = {
+                                addr_to_compress_o[7:0]
                             };
                         end 
                         2: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::XLEN+:17] = {
-                                addr_to_compress_o[16:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::TIME_LEN+:16] = {
+                                addr_to_compress_o[15:0]
                             };
                         end
                         3: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::XLEN+:25] = {
-                                addr_to_compress_o[24:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::TIME_LEN+:24] = {
+                                addr_to_compress_o[23:0]
                             };
                         end
                         4: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::XLEN+:33] = {
-                                addr_to_compress_o[32:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::TIME_LEN+:32] = {
+                                addr_to_compress_o[31:0]
                             };
                         end
+                        `ifdef TE_ARCH64 // 64bits case
                         5: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::XLEN+:41] = {
-                                addr_to_compress_o[40:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::TIME_LEN+:40] = {
+                                addr_to_compress_o[39:0]
                             };
                         end 
                         6: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::XLEN+:49] = {
-                                addr_to_compress_o[48:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::TIME_LEN+:48] = {
+                                addr_to_compress_o[47:0]
                             };
                         end
                         7: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::XLEN+:57] = {
-                                addr_to_compress_o[56:0]
+                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::TIME_LEN+:56] = {
+                                addr_to_compress_o[55:0]
                             };
                         end
                         8: begin
-                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::XLEN+:65] = {
+                            packet_payload_o[5+te_pkg::PRIV_LEN+te_pkg::TIME_LEN+:64] = {
                                 addr_to_compress_o
                             };
                         end
+                        `endif
                         endcase
                     end
                     /*TODO: other cases*/
@@ -376,7 +394,7 @@ module te_packet_emitter
                     
                     case(time_and_context)
                     2'b00: begin
-                        used_bits += 1 + te_pkg::PRIV_LEN + te_pkg::XLEN + 2 + address_off * 8 + 1 + te_pkg::XLEN;
+                        used_bits += 1 + te_pkg::PRIV_LEN + te_pkg::XLEN + 2 + (address_off * 8) + te_pkg::XLEN; // last XLEN is for tval
 
                         packet_payload_o[4+:1+te_pkg::PRIV_LEN+te_pkg::XLEN+2] = {
                             thaddr_i,
@@ -385,61 +403,64 @@ module te_packet_emitter
                             tc_priv_i,
                             branch
                         };
-                        // address compression
+                        // address compression //FIXME Why tval is with addr_to_compress ? and not before ?
                         case (address_off)
                         1: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:9+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[8:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:8+te_pkg::XLEN] = {
+                                addr_to_compress_o[7:0],
+                                tval
+                                
                             };
                         end
                         2: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:17+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[16:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:16+te_pkg::XLEN] = {
+                                addr_to_compress_o[15:0],
+                                tval
                             };
                         end
                         3: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:25+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[24:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:24+te_pkg::XLEN] = {
+                                addr_to_compress_o[23:0],
+                                tval
                             };
                         end
                         4: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:33+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[32:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:32+te_pkg::XLEN] = {
+                                addr_to_compress_o[31:0],
+                                tval
                             };
                         end
+                        `ifdef TE_ARCH64 // 64bits case
                         5: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:41+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[40:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:40+te_pkg::XLEN] = {
+                                addr_to_compress_o[39:0],
+                                tval
                             };
                         end
                         6: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:49+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[48:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:48+te_pkg::XLEN] = {
+                                addr_to_compress_o[47:0],
+                                tval
                             };
                         end
                         7: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:57+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[56:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:56+te_pkg::XLEN] = {
+                                addr_to_compress_o[55:0],
+                                tval
                             };
                         end
                         8: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:65+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+:64+te_pkg::XLEN] = {
+                                addr_to_compress_o,
+                                tval
                             };
                         end
+                        `endif
                         endcase
                     end
 
                     2'b10: begin
-                        used_bits += 1 + te_pkg::PRIV_LEN + te_pkg::XLEN + 2 + address_off * 8 + 1 + te_pkg::TIME_LEN * 2;
+                        used_bits += 1 + te_pkg::PRIV_LEN + te_pkg::XLEN + 2 + (address_off * 8) + te_pkg::TIME_LEN + te_pkg::XLEN ; // why time_len *2 , time = 64 bits ?
 
                         packet_payload_o[4+:1+te_pkg::PRIV_LEN+te_pkg::XLEN+2+te_pkg::TIME_LEN] = {
                             thaddr_i,
@@ -452,53 +473,56 @@ module te_packet_emitter
                         // address compression
                         case (address_off)
                         1: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::XLEN+:9+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[8:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::TIME_LEN+:8+te_pkg::XLEN] = { // FIXME Replace XLEN by TIME_LEN every time ?
+                                addr_to_compress_o[7:0],
+                                tval
+                                
                             };
                         end
                         2: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::XLEN+:17+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[16:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::TIME_LEN+:16+te_pkg::XLEN] = {
+                                addr_to_compress_o[15:0],
+                                tval
                             };
                         end
                         3: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::XLEN+:25+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[24:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::TIME_LEN+:24+te_pkg::XLEN] = {
+                                addr_to_compress_o[23:0],
+                                tval
                             };
                         end
                         4: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::XLEN+:33+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[32:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::TIME_LEN+:32+te_pkg::XLEN] = {
+                                addr_to_compress_o[31:0],
+                                tval
                             };
                         end
+                        `ifdef TE_ARCH64 // 64bits case
                         5: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::XLEN+:41+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[40:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::TIME_LEN+:40+te_pkg::XLEN] = {
+                                addr_to_compress_o[39:0],
+                                tval
                             };
                         end
                         6: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::XLEN+:49+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[48:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::TIME_LEN+:48+te_pkg::XLEN] = {
+                                addr_to_compress_o[47:0],
+                                tval
                             };
                         end
                         7: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::XLEN+:57+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o[56:0]
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::TIME_LEN+:56+te_pkg::XLEN] = {
+                                addr_to_compress_o[55:0],
+                                tval
                             };
                         end
                         8: begin
-                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::XLEN+:65+te_pkg::XLEN] = {
-                                tval,
-                                addr_to_compress_o
+                            packet_payload_o[7+te_pkg::PRIV_LEN+te_pkg::XLEN+te_pkg::TIME_LEN+:64+te_pkg::XLEN] = {
+                                addr_to_compress_o,
+                                tval
                             };
                         end
+                        `endif
                         endcase
                     end
                     /*TODO: other cases*/
@@ -532,7 +556,7 @@ module te_packet_emitter
                     // updating packet type
                     packet_type_o = te_pkg::F3SF3;
 
-                    used_bits += 7;
+                    used_bits += 11;
 
                     packet_payload_o[4+:1+1+2+7] = {
                         /* info required for data tracing - in the future
@@ -563,7 +587,7 @@ module te_packet_emitter
                 end else begin*/
 
                 // case of an updiscon
-                if(lc_updiscon_i) begin
+                if(lc_updiscon_i && (nc_exc_only_i || nc_ppccd_br_i)) begin //FIXME spec says lc_updiscon AND nc_execption/interrupt /priv change / resync <= need to add nc_resync
                     notify = tc_address_i[te_pkg::XLEN-1];
                     updiscon = !notify;
                     irreport = updiscon;
@@ -587,154 +611,158 @@ module te_packet_emitter
                     te_pkg::RETURN_STACK_SIZE == 0) begin // not supported
                     
                     // payload bits
-                    used_bits += 3 + address_off*8 + 1;
+                    used_bits += 3 + address_off*8 ;
 
                     // address compression
                     case (address_off)
                     1: begin
-                        packet_payload_o[2+:9+3] = {
+                        packet_payload_o[2+:8+3] = {
+                            addr_to_compress_o[7:0],
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[8:0]
+                            notify
                         };
                     end
                     2: begin
-                        packet_payload_o[2+:17+3] = {
+                        packet_payload_o[2+:16+3] = {
+                            addr_to_compress_o[15:0],
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[16:0]
+                            notify
                         };
                     end
                     3: begin
-                        packet_payload_o[2+:25+3] = {
+                        packet_payload_o[2+:24+3] = {
+                            addr_to_compress_o[23:0],
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[24:0]
+                            notify
                         };
                     end
                     4: begin
-                        packet_payload_o[2+:33+3] = {
+                        packet_payload_o[2+:32+3] = {
+                            addr_to_compress_o[31:0],
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[32:0]
+                            notify
                         };
                     end
+                    `ifdef TE_ARCH64 // 64bits case
                     5: begin
-                        packet_payload_o[2+:41+3] = {
+                        packet_payload_o[2+:40+3] = {
+                            addr_to_compress_o[39:0],
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[40:0]
+                            notify
                         };
                     end
                     6: begin
-                        packet_payload_o[2+:49+3] = {
+                        packet_payload_o[2+:48+3] = {
+                            addr_to_compress_o[47:0],
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[48:0]
+                            notify
                         };
                     end
                     7: begin
-                        packet_payload_o[2+:57+3] = {
+                        packet_payload_o[2+:56+3] = {
+                            addr_to_compress_o[55:0],
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[56:0]
+                            notify
                         };
                     end
                     8: begin
-                        packet_payload_o[2+:65+3] = {
+                        packet_payload_o[2+:64+3] = {
+                            addr_to_compress_o,
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o
+                            notify
                         };
                     end
+                    `endif
                     endcase
                     
                 end else begin // supported
                     // payload bits
-                    used_bits += 3 + 2**te_pkg::CALL_COUNTER_SIZE + address_off*8 + 1;
+                    used_bits += 3 + 2**te_pkg::CALL_COUNTER_SIZE + address_off*8 ;
 
                     // address compression
                     case (address_off)
                     1: begin
-                        packet_payload_o[2+:9+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                        packet_payload_o[2+:8+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            addr_to_compress_o[7:0],
                             irdepth,
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[8:0]
+                            notify
                         };
                     end
                     2: begin
-                        packet_payload_o[2+:17+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                        packet_payload_o[2+:16+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            addr_to_compress_o[15:0],
                             irdepth,
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[16:0]
+                            notify
                         };
                     end
                     3: begin
-                        packet_payload_o[2+:25+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                        packet_payload_o[2+:24+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            addr_to_compress_o[23:0],
                             irdepth,
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[24:0]
+                            notify
                         };
                     end
                     4: begin
-                        packet_payload_o[2+:33+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                        packet_payload_o[2+:32+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            addr_to_compress_o[31:0],
                             irdepth,
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[32:0]
+                            notify
                         };
                     end
+                    `ifdef TE_ARCH64 // 64bits case
                     5: begin
-                        packet_payload_o[2+:41+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                        packet_payload_o[2+:40+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            addr_to_compress_o[39:0],
                             irdepth,
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[40:0]
+                            notify
                         };
                     end
                     6: begin
-                        packet_payload_o[2+:49+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                        packet_payload_o[2+:48+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            addr_to_compress_o[47:0],
                             irdepth,
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[48:0]
+                            notify
                         };
                     end
                     7: begin
-                        packet_payload_o[2+:57+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                        packet_payload_o[2+:56+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            addr_to_compress_o[55:0],
                             irdepth,
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o[56:0]
+                            notify
                         };
                     end
                     8: begin
-                        packet_payload_o[2+:65+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                        packet_payload_o[2+:64+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            addr_to_compress_o,
                             irdepth,
                             irreport,
                             updiscon,
-                            notify,
-                            addr_to_compress_o
+                            notify
                         };
                     end
+                    `endif
                     endcase
                 end
             end
@@ -766,7 +794,7 @@ module te_packet_emitter
                 end else begin*/
 
                 // case of an updiscon
-                if(lc_updiscon_i) begin
+                if(lc_updiscon_i && (nc_exc_only_i || nc_ppccd_br_i)) begin //FIXME spec says lc_updiscon AND nc_execption/interrupt /priv change / resync <= need to add nc_resync
                     notify = tc_address_i[te_pkg::XLEN-1];
                     updiscon = !notify;
                     irreport = updiscon;
@@ -786,7 +814,7 @@ module te_packet_emitter
                 end
 
                 // branches and branch_map bits
-                used_bits += te_pkg::BRANCH_COUNT_LEN + branch_map_off;
+                used_bits += (branch_map_off==0)? te_pkg::BRANCH_COUNT_LEN + 32 : te_pkg::BRANCH_COUNT_LEN + branch_map_off;
 
                 // adding branch count and branch map
                 if (branch_map_off == 1) begin
@@ -810,17 +838,15 @@ module te_packet_emitter
                         branches_i
                     };
                 end else if (branch_map_off == 31) begin
-                    if (lc_updiscon_i) begin
-                        packet_payload_o[2+:te_pkg::BRANCH_COUNT_LEN+31] = {
-                            branch_map_i[30:0],
-                            branches_i
-                        };
-                    end else begin
-                        packet_payload_o[2+:te_pkg::BRANCH_COUNT_LEN+31] = {
-                            branch_map_i[30:0],
-                            5'b00000
-                        };
-                    end
+                    packet_payload_o[2+:te_pkg::BRANCH_COUNT_LEN+31] = {
+                        branch_map_i[30:0],
+                        branches_i
+                    };
+                end else begin //FIXME if we have discontinuity branches =31 not 0
+                    packet_payload_o[2+:te_pkg::BRANCH_COUNT_LEN+31] = {
+                        branch_map_i[30:0],
+                        5'b00000
+                    };
                 end
 
                 // attaching the rest of the payload
@@ -830,154 +856,158 @@ module te_packet_emitter
                     if (te_pkg::CALL_COUNTER_SIZE == 0 &&
                         te_pkg::RETURN_STACK_SIZE == 0) begin // not supported
                         // rest of the payload bits
-                        used_bits += 3 + address_off*8 + 1;
+                        used_bits += 3 + address_off*8 ;
 
                         // address compression
                         case (address_off)
                         1: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:9+3] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:8+3] = {
+                                addr_to_compress_o[7:0],
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[8:0]
+                                notify
                             };
                         end
                         2: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:17+3] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:16+3] = {
+                                addr_to_compress_o[15:0],
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[16:0]
+                                notify
                             };
                         end
                         3: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:25+3] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:24+3] = {
+                                addr_to_compress_o[23:0],
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[24:0]
+                                notify
                             };
                         end
                         4: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:33+3] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:32+3] = {
+                                addr_to_compress_o[31:0],
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[32:0]
+                                notify
                             };
                         end
+                        `ifdef TE_ARCH64 // 64bits case
                         5: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:41+3] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:40+3] = {
+                                addr_to_compress_o[39:0],
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[40:0]
+                                notify
                             };
                         end
                         6: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:49+3] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:48+3] = {
+                                addr_to_compress_o[47:0],
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[48:0]
+                                notify
                             };
                         end
                         7: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:57+3] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:56+3] = {
+                                addr_to_compress_o[55:0],
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[56:0]
+                                notify
                             };
                         end
                         8: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:65+3] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:64+3] = {
+                                addr_to_compress_o,
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o
+                                notify
                             };
                         end
+                        `endif
                         endcase
 
                     end else begin // supported -> uses irdepth and irreport
                         // rest of the payload bits
-                        used_bits += 3 + 2**te_pkg::CALL_COUNTER_SIZE + address_off*8 + 1;
+                        used_bits += 3 + 2**te_pkg::CALL_COUNTER_SIZE + address_off*8 ;
 
                         // address compression
                         case (address_off)
                         1: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:9+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:8+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                                addr_to_compress_o[7:0],
                                 irdepth,
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[8:0]
+                                notify
                             };
                         end
                         2: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:17+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:16+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                                addr_to_compress_o[15:0],
                                 irdepth,
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[16:0]
+                                notify
                             };
                         end
                         3: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:25+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:24+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                                addr_to_compress_o[23:0],
                                 irdepth,
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[24:0]
+                                notify
                             };
                         end
                         4: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:33+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:32+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                                addr_to_compress_o[31:0],
                                 irdepth,
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[31:0]
+                                notify
                             };
                         end
+                        `ifdef TE_ARCH64 // 64bits case
                         5: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:41+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:40+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                                addr_to_compress_o[39:0],
                                 irdepth,
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[40:0]
+                                notify
                             };
                         end
                         6: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:49+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:48+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                                addr_to_compress_o[47:0],
                                 irdepth,
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[48:0]
+                                notify
                             };
                         end
                         7: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:57+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:56+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                                addr_to_compress_o[55:0],
                                 irdepth,
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o[56:0]
+                                notify
                             };
                         end
                         8: begin
-                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:65+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                            packet_payload_o[2+te_pkg::BRANCH_COUNT_LEN+branch_map_off+:64+3+2**te_pkg::CALL_COUNTER_SIZE] = {
+                                addr_to_compress_o,
                                 irdepth,
                                 irreport,
                                 updiscon,
-                                notify,
-                                addr_to_compress_o
+                                notify
                             };
                         end
+                        `endif
                         endcase
                     end
                 end
@@ -1033,7 +1063,7 @@ module te_packet_emitter
         if (packet_valid_o && (packet_format_i == te_pkg::F_DIFF_DELTA || 
             packet_format_i == te_pkg::F_ADDR_ONLY)) begin
             if (ioptions_i.delta_address_en) begin
-                diff_addr = signed'(tc_address_i) - latest_addr_q;
+                diff_addr = latest_addr_q - tc_address_i; // mostly >0 exept for jump , remove signed 
                 addr_to_compress_o = diff_addr;
             end else if (ioptions_i.full_address_en) begin
                 addr_to_compress_o = tc_address_i;
@@ -1045,10 +1075,10 @@ module te_packet_emitter
             if (packet_type_o == te_pkg::F1 || 
                 packet_type_o == te_pkg::F2) begin // F1, F2
                 latest_addr_d = tc_address_i;
-                addr_to_compress_o = diff_addr;
+                addr_to_compress_o = tc_address_i;
             end
             if (packet_type_o == te_pkg::F3SF0) begin // F3SF0
-                if (resync_q) begin
+                if (resync_q) begin  //FIXME WHY ?
                     latest_addr_d = tc_address_i;
                     addr_to_compress_o = tc_address_i;
                 end else begin

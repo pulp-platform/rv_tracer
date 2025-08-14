@@ -87,7 +87,7 @@ module te_priority (
     // communicates the packet emitter that format 2 packet was requested by trigger unit
 
     // input to compress
-    input logic [te_pkg::XLEN:0]            addr_to_compress_i,
+    input logic [te_pkg::XLEN-1:0]            addr_to_compress_i,
 
     // outputs for packet_emitter
     output logic                            valid_o,
@@ -100,6 +100,8 @@ module te_priority (
     output te_pkg::qual_status_e            qual_status_o,
     //output logic                            irreport_o, // non mandatory, required implicit return mode
     output logic                            tc_resync_o,
+    output logic                            nc_exc_only_o,
+    output logic                            nc_ppccd_br_o,
     // output for compression
     output logic [$clog2(te_pkg::XLEN):0]   keep_bits_o
     );
@@ -122,8 +124,6 @@ module te_priority (
     // reported is updated when the lc_exception was updated or not
     logic   tc_f3_sf3;
     // next cycle
-    logic   nc_exc_only;
-    logic   nc_ppccd_br;
 
     // signals for compression
     logic [$clog2(te_pkg::XLEN)-1:0]    addr_zeros, addr_ones;
@@ -143,8 +143,8 @@ module te_priority (
     assign  tc_er_n         = (tc_exception_i && tc_retired_i != 0) /*|| tc_trigger_req_i*/;
     assign  tc_rpt_br       = tc_branch_map_full_i && !nc_branch_map_empty_i/* || tc_branch_misprediction_i*/;
     //assign  tc_cci          = tc_context_change_i && tc_imprecise_context_report_i;
-    assign  nc_exc_only     = nc_exception_i && nc_retired_i == 0;
-    assign  nc_ppccd_br     = (nc_privchange_i /*|| (nc_context_change_i &&
+    assign  nc_exc_only_o     = nc_exception_i && nc_retired_i == 0;
+    assign  nc_ppccd_br_o     = (nc_privchange_i /*|| (nc_context_change_i &&
                                 (nc_precise_context_report_i || nc_context_report_as_disc_i))*/) && 
                                 ~nc_branch_map_empty_i;
     assign  tc_f3_sf3       = tc_enc_enabled_i || tc_enc_disabled_i || tc_opmode_change_i ||
@@ -317,7 +317,7 @@ module te_priority (
                         packet_format_o = te_pkg::F_ADDR_ONLY;
                     end
                     valid_o = '1;
-                end else if(nc_exc_only || nc_ppccd_br || !nc_qualified_i) begin
+                end else if(nc_exc_only_o || nc_ppccd_br_o || !nc_qualified_i) begin
                     if(!nc_qualified_i) begin
                         // the packet is sent because it's the last instr qualified
                         lc_ended_rep_d = '1;
@@ -380,12 +380,12 @@ module te_priority (
     assign sign_extendable = addr_zeros > addr_ones ? addr_zeros : addr_ones;
     // outputting the least sign bits we want to keep
     // empty signals are used to cover 32'b0 and 32'b1 corner cases
-    assign keep_bits_o = (empty_zeros || empty_ones) ? 1 : te_pkg::XLEN+1 - sign_extendable + 1;
+    assign keep_bits_o = (empty_zeros || empty_ones) ? 1 : te_pkg::XLEN - sign_extendable + 1;
 
     // leading zero counters
     // from common_cells
     lzc #(
-        .WIDTH(te_pkg::XLEN+1),
+        .WIDTH(te_pkg::XLEN),
         .MODE(1)
     )i_lzc_zeros(
         .in_i   (addr_to_compress_i),
@@ -394,7 +394,7 @@ module te_priority (
     );
 
     lzc #(
-        .WIDTH(te_pkg::XLEN+1),
+        .WIDTH(te_pkg::XLEN),
         .MODE(1)
     )i_lzc_ones(
         .in_i   (~addr_to_compress_i),
