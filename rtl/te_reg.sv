@@ -304,16 +304,28 @@ module te_reg #(
             `ifdef TE_ARCH64 // 64bits case
             // FILTER    
             // cause
-            te_pkg::CAUSE_UPPER: begin
-                prdata_o[te_pkg::XLEN-1:0] = upper_cause_q;
+            te_pkg::CAUSE_UPPER_L: begin // least significant bits
+                prdata_o = upper_cause_q[31:0];
             end
 
-            te_pkg::CAUSE_LOWER: begin
-                prdata_o[te_pkg::XLEN-1:0] = lower_cause_q;
+            te_pkg::CAUSE_UPPER_M: begin // most significant bits
+                prdata_o = upper_cause_q[63:32];
             end
 
-            te_pkg::CAUSE_MATCH: begin
-                prdata_o[te_pkg::XLEN-1:0] = match_cause_q;
+            te_pkg::CAUSE_LOWER_L: begin // least significant bits
+                prdata_o = lower_cause_q[31:0];
+            end
+
+            te_pkg::CAUSE_LOWER_M: begin // most significant bits
+                prdata_o = lower_cause_q[63:32];
+            end
+
+            te_pkg::CAUSE_MATCH_L: begin // least significant bits
+                prdata_o = match_cause_q[31:0];
+            end
+
+            te_pkg::CAUSE_MATCH_M: begin // most significant bits
+                prdata_o = match_cause_q[63:32];
             end
 
             // tvec
@@ -395,15 +407,15 @@ module te_reg #(
             // FILTER
             // cause
             te_pkg::CAUSE_UPPER: begin
-                prdata_o[te_pkg::XLEN-1:0] = upper_cause_q;
+                prdata_o = upper_cause_q;
             end
 
             te_pkg::CAUSE_LOWER: begin
-                prdata_o[te_pkg::XLEN-1:0] = lower_cause_q;
+                prdata_o = lower_cause_q;
             end
 
             te_pkg::CAUSE_MATCH: begin
-                prdata_o[te_pkg::XLEN-1:0] = match_cause_d;
+                prdata_o = match_cause_d;
             end
 
             // tvec
@@ -538,16 +550,28 @@ module te_reg #(
 
             `ifdef TE_ARCH64
             // cause
-            te_pkg::CAUSE_UPPER: begin
-                upper_cause_d = pwdata_i[te_pkg::XLEN-1:0];
+            te_pkg::CAUSE_UPPER_L: begin // least significant bits
+                upper_cause_d[31:0] = pwdata_i;
             end
 
-            te_pkg::CAUSE_LOWER: begin
-                lower_cause_d = pwdata_i[te_pkg::XLEN-1:0];
+            te_pkg::CAUSE_UPPER_M: begin // most significant bits
+                upper_cause_d[63:32] = pwdata_i;
             end
 
-            te_pkg::CAUSE_MATCH: begin
-                match_cause_d = pwdata_i[te_pkg::XLEN-1:0];
+            te_pkg::CAUSE_LOWER_L: begin // least significant bits
+                lower_cause_d[31:0] = pwdata_i;
+            end
+
+            te_pkg::CAUSE_LOWER_M: begin // most significant bits
+                lower_cause_d[63:32] = pwdata_i;
+            end
+
+            te_pkg::CAUSE_MATCH_L: begin // least significant bits
+                match_cause_d[31:0] = pwdata_i;
+            end
+
+            te_pkg::CAUSE_MATCH_M: begin // most significant bits
+                match_cause_d[63:32] = pwdata_i;
             end
 
             // tvec
@@ -627,15 +651,15 @@ module te_reg #(
             `else // 32 bits case
             // cause
             te_pkg::CAUSE_UPPER: begin
-                upper_cause_d = pwdata_i[te_pkg::XLEN-1:0];
+                upper_cause_d = pwdata_i;
             end
 
             te_pkg::CAUSE_LOWER: begin
-                lower_cause_d = pwdata_i[te_pkg::XLEN-1:0];
+                lower_cause_d = pwdata_i;
             end
 
             te_pkg::CAUSE_MATCH: begin
-                match_cause_d = pwdata_i[te_pkg::XLEN-1:0];
+                match_cause_d = pwdata_i;
             end
 
             // tvec
