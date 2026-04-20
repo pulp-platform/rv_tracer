@@ -30,30 +30,33 @@ package te_pkg;
     // the value is added to the peripheral address
     /* FILTER */
     // cause
-    localparam CAUSE_UPPER = 8'h5;
-    localparam CAUSE_LOWER = 8'h6;
-    localparam CAUSE_MATCH = 8'h7;
+    localparam CAUSE_UPPER_L = 8'h5;
+    localparam CAUSE_UPPER_M = 8'h6;
+    localparam CAUSE_LOWER_L = 8'h7;
+    localparam CAUSE_LOWER_M = 8'h8;
+    localparam CAUSE_MATCH_L = 8'h9;
+    localparam CAUSE_MATCH_M = 8'ha;
     // tvec
-    localparam TVEC_UPPER_L = 8'h8; // least significant bits
-    localparam TVEC_UPPER_M = 8'h9; // most significant bits
-    localparam TVEC_LOWER_L = 8'ha; // least significant bits
-    localparam TVEC_LOWER_M = 8'hb; // most significant bits
-    localparam TVEC_MATCH_L = 8'hc; // least significant bits
-    localparam TVEC_MATCH_M = 8'hd; // most significant bits
+    localparam TVEC_UPPER_L = 8'hb; // least significant bits
+    localparam TVEC_UPPER_M = 8'hc; // most significant bits
+    localparam TVEC_LOWER_L = 8'hd; // least significant bits
+    localparam TVEC_LOWER_M = 8'he; // most significant bits
+    localparam TVEC_MATCH_L = 8'hf; // least significant bits
+    localparam TVEC_MATCH_M = 8'h10; // most significant bits
     // tval
-    localparam TVAL_UPPER_L = 8'he; // least significant bits
-    localparam TVAL_UPPER_M = 8'hf; // most significant bits
-    localparam TVAL_LOWER_L = 8'h10; // least significant bits
-    localparam TVAL_LOWER_M = 8'h11; // most significant bits
-    localparam TVAL_MATCH_L = 8'h12; // least significant bits
-    localparam TVAL_MATCH_M = 8'h13; // most significant bits
+    localparam TVAL_UPPER_L = 8'h11; // least significant bits
+    localparam TVAL_UPPER_M = 8'h12; // most significant bits
+    localparam TVAL_LOWER_L = 8'h13; // least significant bits
+    localparam TVAL_LOWER_M = 8'h14; // most significant bits
+    localparam TVAL_MATCH_L = 8'h15; // least significant bits
+    localparam TVAL_MATCH_M = 8'h16; // most significant bits
     // iaddr
-    localparam IADDR_UPPER_L = 8'h16; // least significant bits
-    localparam IADDR_UPPER_M = 8'h17; // most significant bits
-    localparam IADDR_LOWER_L = 8'h18; // least significant bits
-    localparam IADDR_LOWER_M = 8'h19; // most significant bits
-    localparam IADDR_MATCH_L = 8'h1a; // least significant bits
-    localparam IADDR_MATCH_M = 8'h1b; // most significant bits
+    localparam IADDR_UPPER_L = 8'h19; // least significant bits
+    localparam IADDR_UPPER_M = 8'h1a; // most significant bits
+    localparam IADDR_LOWER_L = 8'h1b; // least significant bits
+    localparam IADDR_LOWER_M = 8'h1c; // most significant bits
+    localparam IADDR_MATCH_L = 8'h1d; // least significant bits
+    localparam IADDR_MATCH_M = 8'h1e; // most significant bits
 `else // 32bit arch
     localparam XLEN = 32;
     // APB addresses to access registers
@@ -62,20 +65,20 @@ package te_pkg;
     /* FILTER */
     // cause
     localparam CAUSE_UPPER = 8'h5;
-    localparam CAUSE_LOWER = 8'h6;
-    localparam CAUSE_MATCH = 8'h7;
+    localparam CAUSE_LOWER = 8'h7;
+    localparam CAUSE_MATCH = 8'h9;
     // tvec
-    localparam TVEC_UPPER = 8'h8;
-    localparam TVEC_LOWER = 8'ha;
-    localparam TVEC_MATCH = 8'hc;
+    localparam TVEC_UPPER = 8'hb;
+    localparam TVEC_LOWER = 8'hd;
+    localparam TVEC_MATCH = 8'hf;
     // tval
-    localparam TVAL_UPPER = 8'he;
-    localparam TVAL_LOWER = 8'h10;
-    localparam TVAL_MATCH = 8'h12;
+    localparam TVAL_UPPER = 8'h11;
+    localparam TVAL_LOWER = 8'h13;
+    localparam TVAL_MATCH = 8'h15;
     // iaddr
-    localparam IADDR_UPPER = 8'h16;
-    localparam IADDR_LOWER = 8'h18;
-    localparam IADDR_MATCH = 8'h1a;
+    localparam IADDR_UPPER = 8'h19;
+    localparam IADDR_LOWER = 8'h1b;
+    localparam IADDR_MATCH = 8'h1d;
 `endif
     /* both archs parameters */
     // localparams for resync counter
@@ -106,22 +109,22 @@ package te_pkg;
     localparam PRIV_ENABLE_MODE = 8'h3;
     localparam IADDR_ENABLE_MODE = 8'h4;
     // priv
-    localparam PRIV_RANGE = 8'h14;
-    localparam PRIV_MATCH = 8'h15;
+    localparam PRIV_RANGE = 8'h17;
+    localparam PRIV_MATCH = 8'h18;
     /* TRACE MANAGEMENT */
-    localparam TRACE_STATE = 8'h1c;
-    localparam LOSSLESS_TRACE = 8'h1d;
-    localparam SHALLOW_TRACE = 8'h1e;
+    localparam TRACE_STATE = 8'h1f;
+    localparam LOSSLESS_TRACE = 8'h20;
+    localparam SHALLOW_TRACE = 8'h21;
     /* PACKET EMITTER */
-    localparam NO_TIME = 8'h1f;
-    localparam NO_CONTEXT = 8'h20;
-    localparam DELTA_ADDRESS = 8'h21;
-    localparam FULL_ADDRESS = 8'h22;
-    localparam IMPLICIT_EXCEPTION = 8'h23;
-    localparam SIJUMP = 8'h24;
-    localparam IMPLICIT_RETURN = 8'h25;
-    localparam BRANCH_PREDICTION = 8'h26;
-    localparam JUMP_TARGET_CACHE = 8'h27;
+    localparam NO_TIME = 8'h22;
+    localparam NO_CONTEXT = 8'h23;
+    localparam DELTA_ADDRESS = 8'h24;
+    localparam FULL_ADDRESS = 8'h25;
+    localparam IMPLICIT_EXCEPTION = 8'h26;
+    localparam SIJUMP = 8'h27;
+    localparam IMPLICIT_RETURN = 8'h28;
+    localparam BRANCH_PREDICTION = 8'h29;
+    localparam JUMP_TARGET_CACHE = 8'h2a;
 
 // packet types
 typedef enum logic[1:0] { 
