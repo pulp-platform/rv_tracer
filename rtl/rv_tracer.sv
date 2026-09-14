@@ -318,6 +318,7 @@ module rv_tracer #(
         time0_d = time0_q;
         time1_d = time1_q;
         privchange_d = privchange_q;
+        turn_on_tracer_d = turn_on_tracer_q;
         // context_change_d = context_change_q;
         // precise_context_report_d = precise_context_report_q; // requires ctype signal CPU side
         // context_report_as_disc_d = context_report_as_disc_q; //ibidem
